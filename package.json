@@ -1,0 +1,23 @@
+{
+  "name": "sqli-dom-demo",
+  "version": "2.0.0",
+  "description": "Demonstration pedagogique : injection SQL basee sur DOM, implementation et contre-mesures",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "init-db": "mysql -u root < sql/init.sql",
+    "exploit:union": "node attack/exploit-union.js",
+    "exploit:blind": "node attack/exploit-blind.js",
+    "exploit:time": "node attack/exploit-time.js",
+    "forensic": "node forensic/analyze-logs.js"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.19.2",
+    "mysql2": "^3.11.0"
+
+  }
+}
