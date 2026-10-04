@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atrium — Administration</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <div class="main">
+      <div class="topbar"><h1>Administration</h1></div>
+
+      <div class="content">
+        <div class="tabs" role="tablist">
+          <button role="tab" data-tab="users" aria-selected="true">Collaborateurs</button>
+          <button role="tab" data-tab="departments" aria-selected="false">Services</button>
+          <button role="tab" data-tab="audit" aria-selected="false">Journal d'audit</button>
+          <button role="tab" data-tab="logins" aria-selected="false">Connexions</button>
+        </div>
+        <div id="panel"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Créer / modifier un collaborateur -->
+  <dialog class="dlg" id="user-dialog">
+    <form id="user-form" method="dialog" novalidate>
+      <h3 id="user-dialog-title">Nouveau collaborateur</h3>
+      <div class="form-grid">
+        <div class="field"><label for="u-full">Nom complet</label><input id="u-full" name="full_name" maxlength="80" required></div>
+        <div class="field"><label for="u-username">Identifiant</label><input id="u-username" name="username" maxlength="32" autocapitalize="none" required></div>
+        <div class="field"><label for="u-email">E-mail</label><input id="u-email" name="email" type="email" maxlength="120" required></div>
+        <div class="field"><label for="u-dept">Service</label><select id="u-dept" name="department" required></select></div>
+        <div class="field"><label for="u-role">Rôle</label>
+          <input id="u-role" name="role" list="roles" maxlength="60" required>
+          <datalist id="roles"><option>Collaborateur</option><option>Administrateur</option><option>Lead technique</option><option>Charge RH</option></datalist>
+          <span class="hint">« Administrateur » donne tous les droits.</span>
+        </div>
+        <div class="field"><label for="u-manager">Manager</label><select id="u-manager" name="manager_id"></select></div>
+        <div class="field"><label for="u-phone">Téléphone</label><input id="u-phone" name="phone" maxlength="30"></div>
+        <div class="field"><label for="u-site">Site</label><input id="u-site" name="site" maxlength="60"></div>
+        <div class="field"><label for="u-hire">Date d'arrivée</label><input id="u-hire" name="hire_date" type="date"></div>
+        <div class="field" id="u-pass-field"><label for="u-pass">Mot de passe initial</label>
+          <input id="u-pass" name="password" type="password" autocomplete="new-password">
+          <span class="hint">10 caractères minimum, une lettre et un chiffre.</span>
+        </div>
+        <div class="field wide"><label for="u-bio">Bio</label><textarea id="u-bio" name="bio" maxlength="500"></textarea></div>
+      </div>
+      <div class="form-error" id="user-error" role="alert"></div>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Enregistrer</button>
+        <button class="btn" type="button" data-close>Annuler</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Réinitialiser un mot de passe -->
+  <dialog class="dlg" id="pass-dialog">
+    <form id="pass-form" method="dialog" novalidate>
+      <h3 id="pass-title">Réinitialiser le mot de passe</h3>
+      <div class="field"><label for="pw">Nouveau mot de passe</label><input id="pw" name="password" type="password" autocomplete="new-password" required></div>
+      <p class="hint" style="font-size:.78rem;color:var(--text-dim)">Les sessions ouvertes de ce compte seront fermées.</p>
+      <div class="form-error" id="pass-error" role="alert"></div>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Réinitialiser</button>
+        <button class="btn" type="button" data-close>Annuler</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Créer / modifier un service -->
+  <dialog class="dlg" id="dept-dialog">
+    <form id="dept-form" method="dialog" novalidate>
+      <h3 id="dept-title">Nouveau service</h3>
+      <div class="form-grid">
+        <div class="field wide"><label for="dp-name">Nom</label><input id="dp-name" name="name" maxlength="80" required></div>
+        <div class="field"><label for="dp-budget">Budget (FCFA)</label><input id="dp-budget" name="budget" type="number" min="0" required></div>
+        <div class="field"><label for="dp-loc">Lieu</label><input id="dp-loc" name="location" maxlength="80" required></div>
+      </div>
+      <div class="form-error" id="dept-error" role="alert"></div>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Enregistrer</button>
+        <button class="btn" type="button" data-close>Annuler</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app-shell.js"></script>
+  <script>
+    const { esc, api, fmtDate, fmtDateTime, fmtMoney } = AtriumShell;
+    const $ = (id) => document.getElementById(id);
+    let me, users = [], departments = [], currentTab = 'users';
+    let editingUserId = null, editingDeptId = null, resettingUserId = null;
+
+    document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
+
+    // ------------------------------------------------------------ onglets
+    document.querySelectorAll('.tabs [role="tab"]').forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
+
+    async function showTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.tabs [role="tab"]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+      try {
+        await ({ users: renderUsers, departments: renderDepartments, audit: renderAudit, logins: renderLogins })[tab]();
+      } catch (err) { $('panel').innerHTML = `<div class="empty-state warn"><b>${esc(err.message)}</b></div>`; }
+    }
+
+    // ------------------------------------------------------------ collaborateurs
+    async function renderUsers() {
+      [users, departments] = await Promise.all([api('/api/admin/users'), api('/api/departments')]);
+      $('panel').innerHTML = `
+        <div class="page-head"><p>${users.length} compte(s). Désactiver un compte ferme ses sessions et bloque sa connexion.</p>
+          <button class="btn primary" id="new-user">+ Nouveau collaborateur</button></div>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Nom</th><th>Identifiant</th><th>Service</th><th>Rôle</th><th>Manager</th><th>Statut</th><th></th></tr></thead>
+          <tbody>${users.map(u => `
+            <tr class="${u.active ? '' : 'inactive'}">
+              <td><b>${esc(u.full_name)}</b><div class="mono">${esc(u.email)}</div></td>
+              <td class="mono">${esc(u.username)}</td>
+              <td>${esc(u.department)}</td>
+              <td>${esc(u.role)}</td>
+              <td>${esc(u.manager_name || '—')}</td>
+              <td><span class="pill ${u.active ? 'ok' : 'ko'}">${u.active ? 'actif' : 'désactivé'}</span></td>
+              <td><div class="actions">
+                <button class="btn sm" data-edit="${u.id}">Modifier</button>
+                <button class="btn sm" data-pass="${u.id}">Mot de passe</button>
+                ${u.id !== me.id ? `<button class="btn sm ${u.active ? 'danger' : ''}" data-toggle="${u.id}">${u.active ? 'Désactiver' : 'Réactiver'}</button>` : ''}
+              </div></td>
+            </tr>`).join('')}
+          </tbody></table></div>`;
+      $('new-user').addEventListener('click', () => openUser(null));
+      document.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => openUser(Number(b.dataset.edit))));
+      document.querySelectorAll('[data-pass]').forEach(b => b.addEventListener('click', () => openPass(Number(b.dataset.pass))));
+      document.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', () => toggleUser(Number(b.dataset.toggle))));
+    }
+
+    function openUser(id) {
+      const f = $('user-form');
+      AtriumShell.clearError($('user-error'));
+      f.reset();
+      editingUserId = id;
+      $('user-dialog-title').textContent = id ? 'Modifier le collaborateur' : 'Nouveau collaborateur';
+      $('u-pass-field').hidden = !!id; // le mot de passe se réinitialise via son propre bouton
+      $('u-dept').innerHTML = departments.map(d => `<option>${esc(d.name)}</option>`).join('');
+      $('u-manager').innerHTML = '<option value="">— aucun —</option>' + users
+        .filter(u => u.active && u.id !== id).map(u => `<option value="${u.id}">${esc(u.full_name)}</option>`).join('');
+      if (id) {
+        const u = users.find(x => x.id === id);
+        f.full_name.value = u.full_name; f.username.value = u.username; f.email.value = u.email;
+        f.department.value = u.department; f.role.value = u.role; f.manager_id.value = u.manager_id ?? '';
+        f.phone.value = u.phone || ''; f.site.value = u.site || ''; f.hire_date.value = u.hire_date || ''; f.bio.value = u.bio || '';
+      }
+      $('user-dialog').showModal();
+    }
+
+    $('user-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      AtriumShell.clearError($('user-error'));
+      const body = {
+        full_name: f.full_name.value, username: f.username.value, email: f.email.value,
+        department: f.department.value, role: f.role.value,
+        manager_id: f.manager_id.value ? Number(f.manager_id.value) : null,
+        phone: f.phone.value, site: f.site.value, hire_date: f.hire_date.value, bio: f.bio.value,
+      };
+      try {
+        if (editingUserId) await api(`/api/admin/users/${editingUserId}`, { method: 'PATCH', body });
+        else await api('/api/admin/users', { method: 'POST', body: { ...body, password: f.password.value } });
+        $('user-dialog').close();
+        AtriumShell.toast(editingUserId ? 'Compte mis à jour.' : 'Compte créé.');
+        await showTab('users');
+      } catch (err) { AtriumShell.showError($('user-error'), err); }
+    });
+
+    async function toggleUser(id) {
+      const u = users.find(x => x.id === id);
+      if (u.active && !confirm(`Désactiver le compte de ${u.full_name} ? Ses sessions seront fermées.`)) return;
+      try {
+        await api(`/api/admin/users/${id}`, { method: 'PATCH', body: { active: !u.active } });
+        await showTab('users');
+      } catch (err) { AtriumShell.showError(null, err); }
+    }
+
+    function openPass(id) {
+      resettingUserId = id;
+      AtriumShell.clearError($('pass-error'));
+      $('pass-form').reset();
+      $('pass-title').textContent = `Réinitialiser le mot de passe — ${users.find(u => u.id === id).full_name}`;
+      $('pass-dialog').showModal();
+    }
+    $('pass-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      AtriumShell.clearError($('pass-error'));
+      try {
+        await api(`/api/admin/users/${resettingUserId}/password`, { method: 'POST', body: { password: e.target.password.value } });
+        $('pass-dialog').close();
+        AtriumShell.toast('Mot de passe réinitialisé.');
+      } catch (err) { AtriumShell.showError($('pass-error'), err); }
+    });
+
+    // ------------------------------------------------------------ services
+    async function renderDepartments() {
+      departments = await api('/api/departments');
+      $('panel').innerHTML = `
+        <div class="page-head"><p>Renommer un service met aussi à jour les comptes qui y sont rattachés.</p>
+          <button class="btn primary" id="new-dept">+ Nouveau service</button></div>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Service</th><th>Lieu</th><th>Budget</th><th></th></tr></thead>
+          <tbody>${departments.map(d => `
+            <tr><td><b>${esc(d.name)}</b></td><td>${esc(d.location)}</td><td>${esc(fmtMoney(d.budget))}</td>
+            <td><div class="actions">
+              <button class="btn sm" data-dedit="${d.id}">Modifier</button>
+              <button class="btn sm danger" data-ddel="${d.id}">Supprimer</button></div></td></tr>`).join('')}
+          </tbody></table></div>`;
+      $('new-dept').addEventListener('click', () => openDept(null));
+      document.querySelectorAll('[data-dedit]').forEach(b => b.addEventListener('click', () => openDept(Number(b.dataset.dedit))));
+      document.querySelectorAll('[data-ddel]').forEach(b => b.addEventListener('click', () => deleteDept(Number(b.dataset.ddel))));
+    }
+
+    function openDept(id) {
+      const f = $('dept-form');
+      AtriumShell.clearError($('dept-error'));
+      f.reset();
+      editingDeptId = id;
+      $('dept-title').textContent = id ? 'Modifier le service' : 'Nouveau service';
+      if (id) {
+        const d = departments.find(x => x.id === id);
+        f.name.value = d.name; f.budget.value = d.budget; f.location.value = d.location;
+      }
+      $('dept-dialog').showModal();
+    }
+    $('dept-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      AtriumShell.clearError($('dept-error'));
+      const body = { name: f.name.value, budget: Number(f.budget.value), location: f.location.value };
+      try {
+        if (editingDeptId) await api(`/api/admin/departments/${editingDeptId}`, { method: 'PATCH', body });
+        else await api('/api/admin/departments', { method: 'POST', body });
+        $('dept-dialog').close();
+        await showTab('departments');
+      } catch (err) { AtriumShell.showError($('dept-error'), err); }
+    });
+    async function deleteDept(id) {
+      const d = departments.find(x => x.id === id);
+      if (!confirm(`Supprimer le service « ${d.name} » ?`)) return;
+      try { await api(`/api/admin/departments/${id}`, { method: 'DELETE' }); await showTab('departments'); }
+      catch (err) { AtriumShell.showError(null, err); }
+    }
+
+    // ------------------------------------------------------------ journaux
+    async function renderAudit() {
+      const rows = await api('/api/admin/audit?limit=200');
+      $('panel').innerHTML = `
+        <div class="page-head"><p>Les 200 dernières actions d'écriture et échecs de connexion.</p></div>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Date</th><th>Auteur</th><th>Action</th><th>Cible</th><th>Détail</th></tr></thead>
+          <tbody>${rows.length ? rows.map(r => `
+            <tr><td class="mono">${esc(fmtDateTime(r.ts))}</td>
+            <td>${esc(r.actor_name || '—')}</td>
+            <td><span class="pill ${r.action === 'login_failed' ? 'ko' : ''}">${esc(r.action)}</span></td>
+            <td class="mono">${esc(r.target_type ? `${r.target_type} #${r.target_id ?? ''}` : '—')}</td>
+            <td class="mono" style="word-break:break-word">${esc(r.detail || '')}</td></tr>`).join('')
+            : '<tr><td colspan="5">Aucune action enregistrée pour le moment.</td></tr>'}
+          </tbody></table></div>`;
+    }
+
+    async function renderLogins() {
+      const rows = await api('/api/admin/logins?limit=200');
+      $('panel').innerHTML = `
+        <div class="page-head"><p>Les 200 dernières connexions, réussies ou non.</p></div>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Date</th><th>Compte</th><th>Adresse IP</th><th>Résultat</th></tr></thead>
+          <tbody>${rows.map(r => `
+            <tr><td class="mono">${esc(fmtDateTime(r.ts))}</td><td>${esc(r.full_name)}</td><td class="mono">${esc(r.ip)}</td>
+            <td><span class="pill ${r.success ? 'ok' : 'ko'}">${r.success ? 'réussie' : 'échec'}</span></td></tr>`).join('')}
+          </tbody></table></div>`;
+    }
+
+    AtriumShell.boot('admin').then(async (user) => {
+      me = user;
+      if (!user.is_admin) {
+        $('panel').innerHTML = '<div class="empty-state warn"><b>Accès réservé aux administrateurs.</b></div>';
+        document.querySelector('.tabs').hidden = true;
+        return;
+      }
+      await showTab('users');
+    }).catch(err => AtriumShell.showError(null, err));
+  </script>
+</body>
+</html>

@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atrium — Projet</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <div class="main">
+      <div class="topbar">
+        <h1 id="title">Projet</h1>
+        <div class="right" id="project-actions"></div>
+      </div>
+
+      <div class="content">
+        <div class="breadcrumb"><a href="projects.html">← Projets</a></div>
+        <div id="area"><div class="empty-state">Chargement du projet…</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modifier le projet -->
+  <dialog class="dlg" id="edit-dialog">
+    <form id="edit-form" method="dialog" novalidate>
+      <h3>Modifier le projet</h3>
+      <div class="form-grid">
+        <div class="field wide"><label for="e-name">Nom</label><input id="e-name" name="name" maxlength="120" required></div>
+        <div class="field"><label for="e-client">Client</label><input id="e-client" name="client" maxlength="120" required></div>
+        <div class="field"><label for="e-budget">Budget (FCFA)</label><input id="e-budget" name="budget" type="number" min="0" required></div>
+        <div class="field"><label for="e-dept">Service</label><select id="e-dept" name="department_id"></select></div>
+        <div class="field"><label for="e-status">Statut</label>
+          <select id="e-status" name="status"><option>En cours</option><option>Termine</option><option>Suspendu</option></select>
+        </div>
+      </div>
+      <div class="form-error" id="edit-error" role="alert"></div>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Enregistrer</button>
+        <button class="btn" type="button" data-close>Annuler</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Ajouter un membre -->
+  <dialog class="dlg" id="member-dialog">
+    <form id="member-form" method="dialog" novalidate>
+      <h3>Ajouter un membre</h3>
+      <div class="form-grid">
+        <div class="field"><label for="m-user">Collaborateur</label><select id="m-user" name="user_id" required></select></div>
+        <div class="field"><label for="m-role">Rôle sur le projet</label><input id="m-role" name="role_on_project" maxlength="60" required></div>
+      </div>
+      <div class="form-error" id="member-error" role="alert"></div>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Ajouter</button>
+        <button class="btn" type="button" data-close>Annuler</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Ajouter / modifier un document -->
+  <dialog class="dlg" id="doc-dialog">
+    <form id="doc-form" method="dialog" novalidate>
+      <h3 id="doc-dialog-title">Nouveau document</h3>
+      <div class="form-grid">
+        <div class="field wide"><label for="d-title">Titre</label><input id="d-title" name="title" maxlength="150" required></div>
+        <div class="field wide"><label for="d-content">Contenu</label><textarea id="d-content" name="content" maxlength="5000" required></textarea></div>
+        <div class="field check wide">
+          <input id="d-conf" name="confidential" type="checkbox">
+          <label for="d-conf">Document confidentiel (visible uniquement des membres du projet)</label>
+        </div>
+      </div>
+      <div class="form-error" id="doc-error" role="alert"></div>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Enregistrer</button>
+        <button class="btn" type="button" data-close>Annuler</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app-shell.js"></script>
+  <script>
+    const { esc, api, fmtDateTime, fmtMoney } = AtriumShell;
+    const projectId = new URLSearchParams(location.search).get('id');
+    let me, state, editingDocId = null;
+
+    const $ = (id) => document.getElementById(id);
+    document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
+
+    function render() {
+      const { project, members, documents, permissions } = state;
+      document.title = `Atrium — ${project.name}`;
+      $('title').textContent = project.name;
+
+      $('project-actions').innerHTML = permissions.can_manage
+        ? '<button class="btn" id="edit-btn">Modifier</button><button class="btn danger" id="delete-btn">Supprimer</button>' : '';
+      if (permissions.can_manage) {
+        $('edit-btn').addEventListener('click', openEdit);
+        $('delete-btn').addEventListener('click', deleteProject);
+      }
+
+      $('area').innerHTML = `
+        <div class="card">
+          <div class="kv">
+            <div><div class="k">Statut</div><div class="v"><span class="status-pill ${project.status === 'En cours' ? 'on' : 'off'}">${esc(project.status)}</span></div></div>
+            <div><div class="k">Client</div><div class="v">${esc(project.client)}</div></div>
+            <div><div class="k">Service</div><div class="v">${esc(project.department_name)}</div></div>
+            <div><div class="k">Budget</div><div class="v">${esc(fmtMoney(project.budget))}</div></div>
+            <div><div class="k">Responsable</div><div class="v">${esc(project.owner_name || '—')}</div></div>
+          </div>
+        </div>
+
+        <div class="page-head" style="margin-top:26px"><h3 class="section-title" style="margin:0">Membres (${members.length})</h3>
+          ${permissions.can_manage ? '<button class="btn sm" id="add-member">+ Ajouter un membre</button>' : ''}
+        </div>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Nom</th><th>Service</th><th>Rôle sur le projet</th><th></th></tr></thead>
+          <tbody>${members.map(m => `
+            <tr>
+              <td><b>${esc(m.full_name)}</b>${m.user_id === project.owner_id ? ' <span class="pill amber">responsable</span>' : ''}</td>
+              <td>${esc(m.department)}</td>
+              <td>${esc(m.role_on_project)}</td>
+              <td>${permissions.can_manage && m.user_id !== project.owner_id
+                ? `<button class="btn sm danger" data-remove="${m.user_id}">Retirer</button>` : ''}</td>
+            </tr>`).join('')}
+          </tbody></table></div>
+
+        <div class="page-head" style="margin-top:26px"><h3 class="section-title" style="margin:0">Documents (${documents.length})</h3>
+          <button class="btn sm" id="add-doc">+ Nouveau document</button>
+        </div>
+        ${documents.length ? `<div class="projects-list">${documents.map(d => `
+          <div class="project-card">
+            <div class="meta-row">
+              <div class="doc-title">${esc(d.title)}${d.confidential ? '<span class="conf-badge">Confidentiel</span>' : ''}</div>
+              ${d.can_edit ? `<div class="doc-actions">
+                <button class="btn sm" data-edit-doc="${d.id}">Modifier</button>
+                <button class="btn sm danger" data-del-doc="${d.id}">Supprimer</button></div>` : ''}
+            </div>
+            <div class="doc-content" style="white-space:pre-wrap">${esc(d.content)}</div>
+            <div class="project-meta">${esc(d.author_name || 'auteur inconnu')} · ${esc(fmtDateTime(d.updated_at || d.created_at))}</div>
+          </div>`).join('')}</div>`
+          : '<div class="empty-state" style="padding:26px">Aucun document pour ce projet.</div>'}`;
+
+      if (permissions.can_manage) $('add-member').addEventListener('click', openMember);
+      $('add-doc').addEventListener('click', () => openDoc(null));
+      document.querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', () => removeMember(Number(b.dataset.remove))));
+      document.querySelectorAll('[data-edit-doc]').forEach(b => b.addEventListener('click', () => openDoc(Number(b.dataset.editDoc))));
+      document.querySelectorAll('[data-del-doc]').forEach(b => b.addEventListener('click', () => deleteDoc(Number(b.dataset.delDoc))));
+    }
+
+    async function load() {
+      state = await api(`/api/projects/${encodeURIComponent(projectId)}`);
+      render();
+    }
+
+    // Soumission générique : appelle l'API, ferme le dialogue, recharge la page de données.
+    function bindForm(form, errorId, dialogId, action) {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        AtriumShell.clearError($(errorId));
+        try {
+          await action();
+          $(dialogId).close();
+          await load();
+        } catch (err) { AtriumShell.showError($(errorId), err); }
+      });
+    }
+
+    // ---- projet
+    async function openEdit() {
+      const f = $('edit-form');
+      const p = state.project;
+      AtriumShell.clearError($('edit-error'));
+      const depts = await api('/api/departments');
+      $('e-dept').innerHTML = depts.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+      f.name.value = p.name; f.client.value = p.client; f.budget.value = p.budget;
+      f.department_id.value = p.department_id; f.status.value = p.status;
+      $('edit-dialog').showModal();
+    }
+    bindForm($('edit-form'), 'edit-error', 'edit-dialog', () => {
+      const f = $('edit-form');
+      return api(`/api/projects/${projectId}`, {
+        method: 'PATCH',
+        body: { name: f.name.value, client: f.client.value, budget: Number(f.budget.value),
+                status: f.status.value, department_id: Number(f.department_id.value) },
+      });
+    });
+
+    async function deleteProject() {
+      if (!confirm(`Supprimer définitivement « ${state.project.name} », ses membres et ses documents ?`)) return;
+      try { await api(`/api/projects/${projectId}`, { method: 'DELETE' }); location.href = 'projects.html'; }
+      catch (err) { AtriumShell.showError(null, err); }
+    }
+
+    // ---- membres
+    async function openMember() {
+      AtriumShell.clearError($('member-error'));
+      $('member-form').reset();
+      const candidates = await api(`/api/projects/${projectId}/candidates`);
+      $('m-user').innerHTML = candidates.length
+        ? candidates.map(c => `<option value="${c.id}">${esc(c.full_name)} — ${esc(c.department)}</option>`).join('')
+        : '<option value="">Aucun collaborateur disponible</option>';
+      $('member-dialog').showModal();
+    }
+    bindForm($('member-form'), 'member-error', 'member-dialog', () => {
+      const f = $('member-form');
+      return api(`/api/projects/${projectId}/members`, {
+        method: 'POST', body: { user_id: Number(f.user_id.value), role_on_project: f.role_on_project.value },
+      });
+    });
+
+    async function removeMember(userId) {
+      if (!confirm('Retirer ce membre du projet ?')) return;
+      try { await api(`/api/projects/${projectId}/members/${userId}`, { method: 'DELETE' }); await load(); }
+      catch (err) { AtriumShell.showError(null, err); }
+    }
+
+    // ---- documents
+    function openDoc(docId) {
+      const f = $('doc-form');
+      AtriumShell.clearError($('doc-error'));
+      f.reset();
+      editingDocId = docId;
+      $('doc-dialog-title').textContent = docId ? 'Modifier le document' : 'Nouveau document';
+      if (docId) {
+        const d = state.documents.find(x => x.id === docId);
+        f.title.value = d.title; f.content.value = d.content; f.confidential.checked = d.confidential;
+      }
+      $('doc-dialog').showModal();
+    }
+    bindForm($('doc-form'), 'doc-error', 'doc-dialog', () => {
+      const f = $('doc-form');
+      const body = { title: f.title.value, content: f.content.value, confidential: f.confidential.checked };
+      return editingDocId
+        ? api(`/api/documents/${editingDocId}`, { method: 'PATCH', body })
+        : api(`/api/projects/${projectId}/documents`, { method: 'POST', body });
+    });
+
+    async function deleteDoc(id) {
+      if (!confirm('Supprimer ce document ?')) return;
+      try { await api(`/api/documents/${id}`, { method: 'DELETE' }); await load(); }
+      catch (err) { AtriumShell.showError(null, err); }
+    }
+
+    AtriumShell.boot('projects').then(async (user) => { me = user; await load(); })
+      .catch(err => {
+        $('area').innerHTML = `<div class="empty-state warn"><b>${esc(err.message)}</b></div>`;
+      });
+  </script>
+</body>
+</html>

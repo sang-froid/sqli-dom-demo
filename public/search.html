@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atrium — Recherche avancée</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <div class="main">
+      <div class="topbar">
+        <h1>Recherche avancée</h1>
+        <div class="right">
+          <div class="mode-switch">
+            <span class="label">Mode démo</span>
+            <button class="toggle" id="mode-toggle" data-on="false"><span class="knob"></span></button>
+            <span class="mode-tag vuln" id="mode-tag">Vulnérable</span>
+          </div>
+          <button class="dev-toggle" id="dev-toggle">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            Panneau développeur
+          </button>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="search-form">
+          <div class="field">
+            <label for="f-q">Nom</label>
+            <input id="f-q" placeholder="ex. Mart...">
+          </div>
+          <div class="field">
+            <label for="f-dept">Service</label>
+            <select id="f-dept"><option value="">Tous</option></select>
+          </div>
+          <div class="field">
+            <label for="f-status">Statut de projet</label>
+            <select id="f-status">
+              <option value="">Tous</option>
+              <option value="En cours">En cours</option>
+              <option value="Termine">Terminé</option>
+              <option value="Suspendu">Suspendu</option>
+            </select>
+          </div>
+          <button class="submit-sm" id="go-search">Rechercher</button>
+        </div>
+
+        <div class="hint-box">
+          Cette recherche croise 3 tables (collaborateurs, membres de projet, projets). Les résultats
+          sont limités à votre périmètre, comme l'annuaire.
+        </div>
+
+        <div class="grid" id="grid" style="margin-top:18px">
+          <div class="empty-state">Lancez une recherche pour voir des résultats.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dev-panel" id="dev-panel">
+    <div class="bar"><span class="led"></span> Console réseau — environnement de démo</div>
+    <div class="inner">
+      <h4>Requête SQL exécutée côté serveur</h4>
+      <pre class="sql" id="dev-sql">—</pre>
+      <h4>Réponse brute de l'API</h4>
+      <pre id="dev-response">—</pre>
+    </div>
+  </div>
+
+  <style>
+    .search-form{
+      display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;
+      background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;
+    }
+    .search-form .field{min-width:160px;width:auto}
+    .submit-sm{
+      background:var(--ink);color:#fff;border:none;border-radius:7px;padding:10px 18px;
+      font-family:var(--font-display);font-weight:700;font-size:.86rem;cursor:pointer;
+    }
+    .submit-sm:hover{background:var(--ink-2)}
+    .hint-box{
+      margin-top:12px;font-size:.78rem;color:var(--text-dim);font-family:var(--font-mono);
+    }
+    .result-card{
+      background:var(--surface);border:1px solid var(--line);border-radius:4px 10px 10px 4px;
+      padding:14px 16px;display:flex;flex-direction:column;gap:3px;
+    }
+    .result-card .name{font-weight:700;font-size:.92rem}
+    .result-card .meta{font-size:.78rem;color:var(--text-dim)}
+  </style>
+
+  <script src="app-shell.js"></script>
+  <script>
+    const { esc } = AtriumShell;
+    AtriumShell.initModeSwitch(document.getElementById('mode-toggle'), document.getElementById('mode-tag'));
+    AtriumShell.initDevPanel(document.getElementById('dev-toggle'), document.getElementById('dev-panel'));
+
+    const ICON_EMPTY = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><line x1="7" y1="17" x2="17" y2="7"/></svg>';
+
+    AtriumShell.boot('search').then(() => AtriumShell.api('/api/departments')).then(depts => {
+      document.getElementById('f-dept').innerHTML += depts.map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('');
+    });
+
+    function renderResults(rows) {
+      const grid = document.getElementById('grid');
+      if (!rows || !rows.length) {
+        grid.innerHTML = `<div class="empty-state">${ICON_EMPTY}<div>Aucun résultat.</div></div>`;
+        return;
+      }
+      grid.innerHTML = rows.map(r => `
+        <div class="result-card">
+          <div class="name">${esc(r.full_name)}</div>
+          <div class="meta">${esc(r.role)} · ${esc(r.department)}</div>
+        </div>
+      `).join('');
+    }
+
+    async function runSearch() {
+      const mode = AtriumShell.getMode();
+      const params = new URLSearchParams({ mode });
+      const q = document.getElementById('f-q').value;
+      const department = document.getElementById('f-dept').value;
+      const status = document.getElementById('f-status').value;
+      if (q) params.set('q', q);
+      if (department) params.set('department', department);
+      if (status) params.set('status', status);
+
+      try {
+        // raw() : on veut aussi la reponse des erreurs SQL (500) pour le panneau developpeur.
+        const { data } = await AtriumShell.raw(`/api/search?${params.toString()}`);
+        document.getElementById('dev-sql').textContent = (data && data.sql_execute) || '—';
+        document.getElementById('dev-response').textContent = JSON.stringify(data, null, 2);
+        renderResults(data && data.resultats);
+      } catch (err) {
+        document.getElementById('dev-response').textContent = 'Erreur réseau : ' + err.message;
+      }
+    }
+
+    document.getElementById('go-search').addEventListener('click', runSearch);
+    document.addEventListener('atrium:mode-change', runSearch);
+    document.getElementById('f-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(); });
+  </script>
+</body>
+</html>

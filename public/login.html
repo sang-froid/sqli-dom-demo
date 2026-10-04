@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atrium — Connexion</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="styles.css">
+<style>
+  body{margin:0}
+  .split{display:flex;min-height:100vh}
+  .pane-brand{
+    flex:1 1 44%;background:var(--ink);color:#fff;position:relative;overflow:hidden;
+    display:flex;flex-direction:column;justify-content:space-between;
+    padding:40px 44px;min-height:280px;
+  }
+  .pane-brand::before{
+    content:"";position:absolute;inset:0;
+    background-image:radial-gradient(rgba(255,255,255,.07) 1.5px, transparent 1.5px);
+    background-size:22px 22px;opacity:.5;
+  }
+  .pane-brand::after{
+    content:"";position:absolute;right:-60px;bottom:-60px;width:260px;height:260px;
+    border-radius:50%;background:radial-gradient(circle, rgba(194,130,44,.35), transparent 70%);
+  }
+  .pane-brand .top{position:relative;z-index:1}
+  .pane-brand .headline{
+    position:relative;z-index:1;
+    font-family:var(--font-display);font-weight:700;font-size:clamp(1.8rem,4vw,2.5rem);
+    line-height:1.15;letter-spacing:-.01em;max-width:420px;
+  }
+  .pane-brand .headline .amber{color:var(--amber)}
+  .pane-brand .foot{position:relative;z-index:1;font-size:.78rem;color:#9fb3ac;font-family:var(--font-mono)}
+
+  .pane-form{
+    flex:1 1 56%;background:var(--paper);display:flex;align-items:center;justify-content:center;
+    padding:40px 24px;
+  }
+  .login-card{width:100%;max-width:420px}
+  .login-card .kicker{
+    font-family:var(--font-mono);font-size:.74rem;text-transform:uppercase;letter-spacing:.08em;
+    color:var(--amber);margin-bottom:8px;font-weight:600;
+  }
+  .login-card h1{font-family:var(--font-display);font-size:1.6rem;margin:0 0 6px;font-weight:700}
+  .login-card .hint{font-size:.84rem;color:var(--text-dim);margin-bottom:22px;line-height:1.5}
+
+  .accounts{display:flex;flex-direction:column;gap:8px;margin-bottom:18px}
+  .account-opt{
+    display:flex;align-items:center;gap:12px;
+    border:1px solid var(--line);border-radius:9px;padding:11px 13px;
+    background:var(--surface);cursor:pointer;transition:border-color .12s ease, background .12s ease;
+  }
+  .account-opt:hover{border-color:var(--amber)}
+  .account-opt.selected{border-color:var(--amber);background:var(--amber-soft)}
+  .account-opt .avatar{
+    width:34px;height:34px;border-radius:50%;flex:0 0 auto;
+    background:var(--ink);color:#fff;font-family:var(--font-display);font-weight:700;font-size:.76rem;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .account-opt .name{font-weight:700;font-size:.9rem}
+  .account-opt .role{font-size:.76rem;color:var(--text-dim)}
+  .account-opt .badge{
+    margin-left:auto;font-family:var(--font-mono);font-size:.66rem;font-weight:600;
+    padding:2px 8px;border-radius:5px;background:var(--amber);color:var(--ink);
+  }
+
+  button.submit{
+    width:100%;margin-top:4px;padding:13px;border:none;border-radius:8px;
+    background:var(--ink);color:#fff;font-family:var(--font-display);font-weight:700;
+    font-size:.94rem;cursor:pointer;transition:background .15s ease, transform .1s ease;
+  }
+  button.submit:hover{background:var(--ink-2)}
+  button.submit:disabled{opacity:.5;cursor:not-allowed}
+  button.submit:not(:disabled):active{transform:scale(.99)}
+  .note{
+    margin-top:20px;font-size:.78rem;color:var(--text-dim);text-align:center;
+    border-top:1px solid var(--line);padding-top:16px;line-height:1.5;
+  }
+  @media (max-width:760px){
+    .split{flex-direction:column}
+    .pane-brand{padding:28px 26px}
+  }
+</style>
+</head>
+<body>
+  <div class="split">
+    <div class="pane-brand">
+      <div class="top brand" style="padding:0"><span class="dot"></span> Atrium</div>
+      <div class="headline">L'annuaire interne qui garde <span class="amber">tout le monde</span> à portée de recherche.</div>
+      <div class="foot">Annuaire, projets et documents · chaque compte voit son propre périmètre</div>
+    </div>
+
+    <div class="pane-form">
+      <div class="login-card">
+        <div class="kicker">Espace collaborateurs</div>
+        <h1>Connexion</h1>
+        <p class="hint">Connectez-vous avec votre identifiant Atrium. Chacun n'a accès qu'à son périmètre : lui-même, ses subordonnés directs et les projets auxquels il participe.</p>
+
+        <form id="login-form" novalidate>
+          <div class="field" style="margin-bottom:12px">
+            <label for="username">Identifiant</label>
+            <input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+          </div>
+          <div class="field" style="margin-bottom:6px">
+            <label for="password">Mot de passe</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+          </div>
+          <div class="form-error" id="login-error" role="alert"></div>
+          <button class="submit" id="go" type="submit">Se connecter</button>
+        </form>
+
+        <div id="demo" hidden>
+          <div class="note">Comptes de démonstration — cliquez pour pré-remplir le formulaire.</div>
+          <div class="accounts" id="accounts" style="margin-top:12px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app-shell.js"></script>
+  <script>
+    const { esc, initials } = AtriumShell;
+    const form = document.getElementById('login-form');
+    const errorBox = document.getElementById('login-error');
+    const goBtn = document.getElementById('go');
+
+    // Comptes de démo : proposés seulement si le serveur les expose (DEMO_ACCOUNTS=true).
+    fetch('/api/demo-accounts')
+      .then(r => (r.ok ? r.json() : []))
+      .then(accounts => {
+        if (!accounts.length) return;
+        document.getElementById('demo').hidden = false;
+        const list = document.getElementById('accounts');
+        list.innerHTML = accounts.map(a => `
+          <div class="account-opt" role="button" tabindex="0" data-user="${esc(a.username)}" data-pass="${esc(a.password)}">
+            <div class="avatar">${esc(initials(a.full_name))}</div>
+            <div>
+              <div class="name">${esc(a.full_name)}</div>
+              <div class="role">${esc(a.role)} · ${esc(a.department)}</div>
+            </div>
+            ${a.role === 'Administrateur' ? '<span class="badge">ADMIN</span>' : ''}
+          </div>`).join('');
+        const pick = (el) => {
+          list.querySelectorAll('.account-opt').forEach(x => x.classList.remove('selected'));
+          el.classList.add('selected');
+          form.username.value = el.dataset.user;
+          form.password.value = el.dataset.pass;
+          form.password.focus();
+        };
+        list.querySelectorAll('.account-opt').forEach(el => {
+          el.addEventListener('click', () => pick(el));
+          el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(el); } });
+        });
+      })
+      .catch(() => {});
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      AtriumShell.clearError(errorBox);
+      goBtn.disabled = true;
+      try {
+        await AtriumShell.api('/api/auth/login', {
+          method: 'POST',
+          body: { username: form.username.value.trim(), password: form.password.value },
+        });
+        location.href = 'directory.html';
+      } catch (err) {
+        AtriumShell.showError(errorBox, err);
+        goBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atrium — Mon compte</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <div class="main">
+      <div class="topbar"><h1>Mon compte</h1></div>
+
+      <div class="content" style="max-width:860px">
+        <div class="card">
+          <h2>Mon périmètre</h2>
+          <p class="sub">Ce que votre rôle vous permet de voir et de faire dans Atrium.</p>
+          <div class="kv" id="identity"></div>
+          <p id="scope" style="margin:12px 0 0;font-size:.88rem"></p>
+        </div>
+
+        <form class="card" id="profile-form" novalidate>
+          <h2>Mes informations</h2>
+          <p class="sub">Votre nom, service, rôle et manager sont gérés par un administrateur.</p>
+          <div class="form-grid">
+            <div class="field"><label for="email">E-mail</label><input id="email" name="email" type="email" maxlength="120" required></div>
+            <div class="field"><label for="phone">Téléphone</label><input id="phone" name="phone" maxlength="30"></div>
+            <div class="field"><label for="site">Site</label><input id="site" name="site" maxlength="60"></div>
+            <div class="field wide"><label for="bio">Bio</label><textarea id="bio" name="bio" maxlength="500"></textarea></div>
+          </div>
+          <div class="form-error" id="profile-error" role="alert"></div>
+          <div class="form-actions"><button class="btn primary" type="submit">Enregistrer</button></div>
+        </form>
+
+        <form class="card" id="password-form" novalidate>
+          <h2>Changer de mot de passe</h2>
+          <p class="sub">10 caractères minimum, avec au moins une lettre et un chiffre. Vos autres sessions seront fermées.</p>
+          <div class="form-grid">
+            <div class="field"><label for="current">Mot de passe actuel</label><input id="current" name="current" type="password" autocomplete="current-password" required></div>
+            <div class="field"><label for="next">Nouveau mot de passe</label><input id="next" name="next" type="password" autocomplete="new-password" required></div>
+            <div class="field"><label for="confirm">Confirmation</label><input id="confirm" name="confirm" type="password" autocomplete="new-password" required></div>
+          </div>
+          <div class="form-error" id="password-error" role="alert"></div>
+          <div class="form-actions"><button class="btn primary" type="submit">Mettre à jour</button></div>
+        </form>
+
+        <div class="card">
+          <h2>Mes dernières connexions</h2>
+          <p class="sub">Si une connexion ne vous dit rien, changez votre mot de passe.</p>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>Date</th><th>Adresse IP</th><th>Résultat</th></tr></thead>
+            <tbody id="logins"></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app-shell.js"></script>
+  <script>
+    const { esc, api, fmtDateTime } = AtriumShell;
+    const $ = (id) => document.getElementById(id);
+
+    function fillProfile(user) {
+      const f = $('profile-form');
+      f.email.value = user.email || ''; f.phone.value = user.phone || '';
+      f.site.value = user.site || ''; f.bio.value = user.bio || '';
+    }
+
+    function renderIdentity(user) {
+      $('identity').innerHTML = `
+        <div><div class="k">Nom</div><div class="v">${esc(user.full_name)}</div></div>
+        <div><div class="k">Identifiant</div><div class="v">${esc(user.username)}</div></div>
+        <div><div class="k">Rôle</div><div class="v">${esc(user.role)}</div></div>
+        <div><div class="k">Service</div><div class="v">${esc(user.department)}</div></div>`;
+      $('scope').textContent = user.is_admin
+        ? 'Administrateur : vous voyez toutes les fiches et tous les projets, et vous gérez les comptes et les services.'
+        : user.is_manager
+          ? 'Manager : vous voyez votre fiche et celles de vos subordonnés directs, vos projets, et pouvez créer des projets dans votre service.'
+          : 'Collaborateur : vous voyez votre fiche et les projets auxquels vous participez.';
+    }
+
+    async function loadLogins() {
+      const { logins } = await api('/api/me/logins');
+      $('logins').innerHTML = logins.length ? logins.map(l => `
+        <tr><td>${esc(fmtDateTime(l.ts))}</td><td class="mono">${esc(l.ip)}</td>
+        <td><span class="pill ${l.success ? 'ok' : 'ko'}">${l.success ? 'réussie' : 'échec'}</span></td></tr>`).join('')
+        : '<tr><td colspan="3">Aucune connexion enregistrée.</td></tr>';
+    }
+
+    $('profile-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      AtriumShell.clearError($('profile-error'));
+      try {
+        const { user } = await api('/api/me', {
+          method: 'PATCH',
+          body: { email: f.email.value, phone: f.phone.value, site: f.site.value, bio: f.bio.value },
+        });
+        fillProfile(user);
+        AtriumShell.toast('Informations enregistrées.');
+      } catch (err) { AtriumShell.showError($('profile-error'), err); }
+    });
+
+    $('password-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      AtriumShell.clearError($('password-error'));
+      if (f.next.value !== f.confirm.value) {
+        return AtriumShell.showError($('password-error'), 'La confirmation ne correspond pas.');
+      }
+      try {
+        await api('/api/me/password', { method: 'POST', body: { current: f.current.value, next: f.next.value } });
+        f.reset();
+        AtriumShell.toast('Mot de passe mis à jour.');
+      } catch (err) { AtriumShell.showError($('password-error'), err); }
+    });
+
+    AtriumShell.boot('account').then(async (user) => {
+      renderIdentity(user);
+      fillProfile(user);
+      await loadLogins();
+    }).catch(err => AtriumShell.showError(null, err));
+  </script>
+</body>
+</html>

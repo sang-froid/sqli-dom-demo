@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atrium — Annuaire</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <div class="main">
+      <div class="topbar">
+        <h1>Annuaire</h1>
+        <div class="search">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="search" placeholder="Rechercher un collaborateur…" aria-label="Rechercher un collaborateur">
+        </div>
+        <div class="right">
+          <div class="mode-switch">
+            <span class="label">Mode démo</span>
+            <button class="toggle" id="mode-toggle" data-on="false"><span class="knob"></span></button>
+            <span class="mode-tag vuln" id="mode-tag">Vulnérable</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="stat-row" id="stats"></div>
+        <div class="grid" id="grid">
+          <div class="empty-state">Chargement de l'annuaire…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app-shell.js"></script>
+  <script>
+    const { esc, initials } = AtriumShell;
+    AtriumShell.initModeSwitch(document.getElementById('mode-toggle'), document.getElementById('mode-tag'));
+
+    const ICON_EMPTY = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><line x1="7" y1="17" x2="17" y2="7"/></svg>';
+
+    const TAGS = ['t-a', 't-b', 't-c'];
+    function tagClass(dept) {
+      let h = 0;
+      for (const c of dept) h = (h * 31 + c.charCodeAt(0)) % 997;
+      return TAGS[h % TAGS.length];
+    }
+
+    let employees = [];
+
+    function renderStats(user, list) {
+      const depts = new Set(list.map(e => e.department)).size;
+      const scopeLabel = user.is_admin ? 'Accès complet (administrateur)'
+        : user.is_manager ? 'Vous + subordonnés directs' : 'Votre fiche uniquement';
+      document.getElementById('stats').innerHTML = `
+        <div class="stat-tile hero"><div class="num">${list.length}</div><div class="lbl">Fiches visibles pour votre compte</div></div>
+        <div class="stat-tile"><div class="num">${depts}</div><div class="lbl">Service(s) dans votre périmètre</div></div>
+        <div class="stat-tile"><div class="num" style="font-size:1.1rem">${scopeLabel}</div><div class="lbl">Portée de votre accès</div></div>
+      `;
+    }
+
+    function render(list) {
+      const grid = document.getElementById('grid');
+      if (!list.length) {
+        grid.innerHTML = `<div class="empty-state">${ICON_EMPTY}<div>Aucun collaborateur ne correspond à cette recherche.</div></div>`;
+        return;
+      }
+      grid.innerHTML = list.map(emp => `
+        <a class="emp-card ${tagClass(emp.department)}" href="profile.html#id=${emp.id}" ${emp.active ? '' : 'style="opacity:.55"'}>
+          <div class="avatar">${esc(initials(emp.full_name))}</div>
+          <div>
+            <div class="name">${esc(emp.full_name)}</div>
+            <div class="role">${esc(emp.role)}${emp.active ? '' : ' · désactivé'}</div>
+            <div class="dept">${esc(emp.department)}</div>
+          </div>
+        </a>
+      `).join('');
+    }
+
+    AtriumShell.boot('directory').then(async () => {
+      const data = await AtriumShell.api('/api/employees');
+      employees = data.employees;
+      renderStats(data.user, employees);
+      render(employees);
+    }).catch(err => AtriumShell.showError(null, err));
+
+    document.getElementById('search').addEventListener('input', (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      render(employees.filter(emp =>
+        emp.full_name.toLowerCase().includes(q) ||
+        emp.department.toLowerCase().includes(q) ||
+        emp.role.toLowerCase().includes(q)
+      ));
+    });
+  </script>
+</body>
+</html>

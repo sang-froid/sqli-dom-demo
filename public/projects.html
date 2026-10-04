@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atrium — Projets</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <div class="main">
+      <div class="topbar">
+        <h1>Projets</h1>
+        <div class="search">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="filter" placeholder="Filtrer par nom, client, service…" aria-label="Filtrer les projets">
+        </div>
+        <div class="right">
+          <button class="btn primary" id="new-project" hidden>+ Nouveau projet</button>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="page-head"><p id="scope-note">Chargement…</p></div>
+        <div class="grid" id="grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <dialog class="dlg" id="project-dialog">
+    <form id="project-form" method="dialog" novalidate>
+      <h3>Nouveau projet</h3>
+      <div class="form-grid">
+        <div class="field wide"><label for="p-name">Nom</label><input id="p-name" name="name" maxlength="120" required></div>
+        <div class="field"><label for="p-client">Client</label><input id="p-client" name="client" maxlength="120" required></div>
+        <div class="field"><label for="p-budget">Budget (FCFA)</label><input id="p-budget" name="budget" type="number" min="0" step="1000" value="0" required></div>
+        <div class="field"><label for="p-dept">Service</label><select id="p-dept" name="department_id" required></select></div>
+        <div class="field"><label for="p-status">Statut</label>
+          <select id="p-status" name="status"><option>En cours</option><option>Termine</option><option>Suspendu</option></select>
+        </div>
+      </div>
+      <div class="form-error" id="project-error" role="alert"></div>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Créer le projet</button>
+        <button class="btn" type="button" id="project-cancel">Annuler</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app-shell.js"></script>
+  <script>
+    const { esc, api } = AtriumShell;
+    let projects = [];
+    let me;
+
+    const TAGS = ['t-a', 't-b', 't-c'];
+    function tagClass(name) {
+      let h = 0;
+      for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 997;
+      return TAGS[h % TAGS.length];
+    }
+
+    function render(list) {
+      const grid = document.getElementById('grid');
+      if (!list.length) {
+        grid.innerHTML = '<div class="empty-state">Aucun projet à afficher.</div>';
+        return;
+      }
+      grid.innerHTML = list.map(p => `
+        <a class="emp-card ${tagClass(p.department_name)}" href="project.html?id=${p.id}">
+          <div style="min-width:0;flex:1">
+            <div class="meta-row">
+              <div class="name">${esc(p.name)}</div>
+              <span class="status-pill ${p.status === 'En cours' ? 'on' : 'off'}">${esc(p.status)}</span>
+            </div>
+            <div class="role">${esc(p.client)}</div>
+            <div class="role" style="margin-top:4px">Responsable : ${esc(p.owner_name || '—')} · ${p.member_count} membre(s)</div>
+            <div class="dept">${esc(p.department_name)}</div>
+          </div>
+        </a>`).join('');
+    }
+
+    async function load() {
+      const data = await api('/api/projects');
+      projects = data.projects;
+      document.getElementById('new-project').hidden = !data.can_create;
+      document.getElementById('scope-note').textContent = me.is_admin
+        ? 'Tous les projets de l\'entreprise (accès administrateur).'
+        : 'Les projets dont vous êtes responsable ou membre.';
+      render(projects);
+    }
+
+    document.getElementById('filter').addEventListener('input', (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      render(projects.filter(p => [p.name, p.client, p.department_name, p.owner_name || '', p.status]
+        .some(v => v.toLowerCase().includes(q))));
+    });
+
+    // ---- création
+    const dialog = document.getElementById('project-dialog');
+    const form = document.getElementById('project-form');
+    const errorBox = document.getElementById('project-error');
+
+    document.getElementById('new-project').addEventListener('click', async () => {
+      AtriumShell.clearError(errorBox);
+      form.reset();
+      const depts = await api('/api/departments');
+      // Un manager ne crée que dans son propre service ; un admin choisit.
+      const allowed = me.is_admin ? depts : depts.filter(d => d.name === me.department);
+      document.getElementById('p-dept').innerHTML = allowed.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+      dialog.showModal();
+    });
+    document.getElementById('project-cancel').addEventListener('click', () => dialog.close());
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      AtriumShell.clearError(errorBox);
+      try {
+        const project = await api('/api/projects', {
+          method: 'POST',
+          body: {
+            name: form.name.value, client: form.client.value, budget: Number(form.budget.value),
+            status: form.status.value, department_id: Number(form.department_id.value),
+          },
+        });
+        location.href = `project.html?id=${project.id}`;
+      } catch (err) { AtriumShell.showError(errorBox, err); }
+    });
+
+    AtriumShell.boot('projects').then(async (user) => { me = user; await load(); })
+      .catch(err => AtriumShell.showError(null, err));
+  </script>
+</body>
+</html>
