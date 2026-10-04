@@ -8,7 +8,7 @@ du SQL », mais **l'injection contourne le contrôle d'accès lui-même**.
 **À exécuter uniquement en local.** Données entièrement fictives.
 
 Atrium est une application complète (comptes, sessions, projets, documents, administration)
-dans laquelle **seules deux routes en lecture sont volontairement vulnérables** — voir
+dans laquelle **seules cinq routes en lecture sont volontairement vulnérables** — voir
 « Où se jouent les failles ». Tout le reste (connexion, écritures, administration) est écrit
 proprement : requêtes paramétrées, sessions serveur, droits vérifiés côté serveur.
 
@@ -95,10 +95,11 @@ membres du projet concerné (ou l'Administrateur), indépendamment du périmètr
 
 ## Pages
 
-`login`, `directory` (annuaire), `profile` (fiche — **faille n°1**), `search` (recherche
-avancée — **faille n°2**), `projects` (liste, création), `project` (détail : membres,
-documents), `account` (mes informations, mot de passe, mes connexions), `admin` (comptes,
-services, journal d'audit, connexions — administrateurs uniquement).
+`login`, `directory` (annuaire — **faille n°3**, filtre par service), `search` (recherche
+avancée — **faille n°2**), `profile` (fiche — **faille n°1**), `projects` (liste, création),
+`project` (détail : membres, documents — **faille n°4**, aperçu), `account` (mes
+informations, mot de passe, mes connexions), `admin` (comptes, services, journal d'audit,
+connexions — administrateurs uniquement ; onglet Connexions = **faille n°5**, aveugle).
 
 ## Schéma de données
 
@@ -121,11 +122,13 @@ de chaque projet — redigés (`content: null`) si confidentiels et hors périm�
 
 ## Où se jouent les failles
 
-Deux routes (`routes/lab.js`), chacune avec une implémentation **Vulnérable** et **Corrigée**,
+Cinq routes (`routes/lab.js`), chacune avec une implémentation **Vulnérable** et **Corrigée**,
 choisies via le sélecteur **Mode démo** visible dans l'interface. Ce sont les **seules** à
 construire du SQL par concaténation : toutes les routes d'écriture sont paramétrées, et
 l'injection ne s'exerce que sous la session de l'utilisateur connecté (elle contourne son
-périmètre, pas l'authentification) :
+périmètre, pas l'authentification). Elles couvrent trois techniques et deux vecteurs
+(DOM — `location.hash` — et URL — paramètres `?...`), répartis sur (presque) toutes les
+pages de lecture de l'application :
 
 ### `/api/profile` — contournement de l'autorisation (commentaire SQL)
 
@@ -157,6 +160,51 @@ ID dans une URL.
   déguisés en « collaborateurs » — alors que son périmètre ne devrait contenir qu'elle-même.
 - **Corrigé** : chaque filtre est paramétré (`?`). Une apostrophe dans l'entrée reste une donnée
   littérale ; impossible de faire basculer la requête vers un `UNION SELECT`.
+
+### `/api/lab/directory` — exfiltration par un seul paramètre d'URL (UNION-based)
+
+Filtre par service de l'annuaire (`directory.html`), ajouté spécifiquement pour montrer qu'un
+UNION-based n'a besoin que d'**un seul** paramètre concaténé, sans formulaire à plusieurs
+filtres comme sur `/api/search`.
+
+- **Vulnérable** : `?department=...` est collé tel quel dans `WHERE department = '${department}'`.
+  Le même payload `UNION SELECT` que sur `/api/search` (adapté à 6 colonnes) exfiltre les
+  documents confidentiels, atteignable directement via l'URL : `directory.html?department=...`.
+- **Corrigé** : paramètre lié (`?`), périmètre réappliqué en code sur le résultat.
+
+### `/api/lab/project` — contournement d'autorisation, deuxième modèle (commentaire SQL)
+
+Aperçu en lecture d'un projet (`project.html`), **même technique** que `/api/profile`
+(commentaire SQL qui efface le filtre d'autorisation) mais appliquée à un modèle
+d'autorisation différent : l'appartenance au projet (`project_members`/`owner_id`), pas la
+hiérarchie `manager_id`. Source DOM : `project.html#id=...`, comme la fiche collaborateur.
+Montre que le même bug (filtre de périmètre concaténé dans le texte SQL) se reproduit partout
+où ce motif est codé deux fois indépendamment.
+
+- **Vulnérable** : `WHERE p.id = ${id} AND p.id IN (SELECT project_id FROM project_members
+  WHERE user_id = ${moi} UNION SELECT id FROM projects WHERE owner_id = ${moi})`. Un commentaire
+  SQL dans `id` efface tout ce qui suit, y compris ce filtre d'appartenance.
+- **Corrigé** : requête paramétrée, puis appartenance vérifiée en code (`isProjectMember`).
+- Comme sur la fiche collaborateur, le document confidentiel du projet reste masqué même après
+  contournement : son autorisation est vérifiée séparément (défense en profondeur).
+
+### `/api/lab/login-history` — technique aveugle (booléenne), réservée aux administrateurs
+
+Recherche dans l'historique de connexion par identifiant, onglet **Connexions** de
+l'administration, lue dans l'URL (`#user=...`). Contrairement aux quatre routes ci-dessus,
+**aucune donnée d'une autre table n'est jamais affichée directement** : seul le nombre de
+lignes renvoyées (0 ou plus) sert de signal — la famille « blind » documentée en théorie dans
+`docs/techniques-complementaires.md`, ici réellement câblée. Démontre qu'un outil
+d'administration peut lui aussi être une cible, par exemple via un lien piégé envoyé à un
+administrateur.
+
+- **Vulnérable** : `WHERE u.username = '${user}'`. Payload d'exemple :
+  `admin' AND SUBSTR((SELECT password FROM users WHERE username='admin'),1,1)='$' -- ` — une
+  réponse non vide confirme le caractère, une réponse vide l'infirme. Le labo ne scripte
+  volontairement pas le sondage caractère par caractère (voir
+  `docs/techniques-complementaires.md`, section « Pourquoi le blind et le temporel ne sont pas
+  scriptés ici »).
+- **Corrigé** : paramètre lié ; la chaîne reste un nom d'utilisateur littéral.
 
 ## Scénario de démonstration (pour la soutenance)
 
@@ -194,6 +242,29 @@ Toujours en tant qu'Alice, allez sur **Recherche avancée**.
 8. **Même recherche, mode Corrigé** — basculez le sélecteur, retentez la même chaîne : aucun
    résultat suspect, le texte est traité comme une donnée, pas comme du SQL.
 
+### Partie 3 — un seul paramètre d'URL suffit (annuaire)
+
+Sur **Annuaire**, dans le champ « Filtrer par service (labo) » ou directement dans l'adresse,
+collez :
+```
+?department=zzz' UNION SELECT id, title, content, 'DOCUMENT', NULL, NULL FROM documents WHERE confidential=1 -- 
+```
+Les documents confidentiels apparaissent, exfiltrés par ce **seul** paramètre — sans toucher à
+aucun autre filtre, contrairement à la recherche avancée.
+
+### Partie 4 — même faille, deuxième modèle d'autorisation (projet)
+
+Toujours en tant qu'Alice, ouvrez un projet dont elle n'est pas membre en changeant l'adresse en
+`project.html#id=5 -- ` (projet réservé à l'administrateur). L'aperçu « labo » en haut de la
+page affiche son budget et son client ; son document reste masqué (défense en profondeur).
+
+### Partie 5 — technique aveugle (admin uniquement)
+
+Connectez-vous en `admin`, ouvrez **Administration → Connexions**, et dans le bloc « labo »,
+comparez `admin' AND 1=1 -- ` (des lignes reviennent) à `admin' AND 1=2 -- ` (aucune ligne) :
+la différence est le signal qu'une injection aveugle exploite, caractère par caractère, sans
+jamais afficher directement de donnée volée.
+
 ### Conclusion orale
 
 « L'application avait bien un contrôle d'accès, à deux niveaux (fiche et documents). L'injection
@@ -208,9 +279,11 @@ l'entrée utilisateur ne peut plus changer la structure de la requête. »
 ## Structure
 
 - `server.js` (démarrage) et `app.js` (assemblage Express) ; `config.js` (environnement).
-- `routes/lab.js` — **les deux surfaces vulnérables** : `/api/profile` (la fiche + ses
-  projets/documents) et `/api/search` (recherche avancée multi-tables), vulnérables ou
-  corrigées selon `?mode=`.
+- `routes/lab.js` — **les cinq surfaces vulnérables** : `/api/profile` (la fiche + ses
+  projets/documents), `/api/search` (recherche avancée multi-tables), `/api/lab/directory`
+  (filtre service, un seul paramètre), `/api/lab/project` (aperçu projet, même technique que
+  `/api/profile`) et `/api/lab/login-history` (aveugle, administrateurs uniquement) —
+  vulnérables ou corrigées selon `?mode=`.
 - `routes/auth.js` (connexion, `/api/me`, mot de passe), `routes/directory.js` (annuaire,
   services, comptes de démo), `routes/projects.js` (projets, membres, documents),
   `routes/admin.js` (comptes, services, journaux). Toutes paramétrées.
@@ -222,30 +295,41 @@ l'entrée utilisateur ne peut plus changer la structure de la requête. »
 - `db.js` — base SQLite persistante : schéma, données de démonstration (6 collaborateurs,
   hiérarchie `manager_id`, mots de passe bcrypt ; projets, documents dont 4 confidentiels).
 - `public/` — 8 pages (voir « Pages »), `styles.css`, `app-shell.js` (API, échappement HTML,
-  barre latérale, mode démo). `profile.html` lit l'identifiant dans `location.hash` (le DOM) —
-  c'est la source de la faille n°1. Toute valeur issue de la base est échappée avant affichage.
+  barre latérale, mode démo), `lab-guide.js` (cadre pédagogique affiché en haut de chaque page :
+  explication de la page, code vulnérable/corrigé, et boutons pour lancer chaque attaque
+  directement depuis l'interface). `profile.html` et `project.html` lisent l'identifiant dans
+  `location.hash` (le DOM) — c'est la source des failles n°1 et n°4. Toute valeur issue de la
+  base est échappée avant affichage.
 - `tests/` — `npm test` : `auth` (sessions, limitation, mot de passe), `access` (droits et
-  logique métier), `lab` (non-régression des deux failles : elles doivent rester exploitables en
+  logique métier), `lab` (non-régression des cinq failles : elles doivent rester exploitables en
   mode vulnérable et fermées en mode corrigé), `persistence`.
 - `scripts/reset-db.js` — `npm run db:reset`.
-- `docs/techniques-complementaires.md` — blind booléen, time-based (théorique ; le UNION-based
-  est maintenant implémenté concrètement sur `/api/search`, voir plus haut).
+- `docs/techniques-complementaires.md` — temporel (théorique ; in-band, UNION-based et blind
+  booléen sont implémentés concrètement sur les cinq routes de `routes/lab.js`, voir plus haut).
 
 ## Pour le rapport
 
-- Capturer les étapes des deux scénarios ci-dessus, panneau développeur ouvert à chaque fois.
+- Capturer les étapes des cinq scénarios ci-dessus, panneau développeur ouvert à chaque fois (ou
+  les cadres pédagogiques de chaque page, qui donnent directement le même détail et un bouton
+  pour rejouer l'attaque).
 - Documenter le chemin complet pour chaque faille : source (DOM, `location.hash` ou champ de
-  formulaire) → transit (`fetch`) → sink (SQL, concaténation du filtre **et** souvent d'un
-  filtre d'autorisation) → retour (JSON affiché).
-- Insister sur deux points centraux :
+  formulaire, ou paramètre d'URL) → transit (`fetch`) → sink (SQL, concaténation du filtre **et**
+  souvent d'un filtre d'autorisation) → retour (JSON affiché, ou simple présence/absence de
+  résultat pour la variante aveugle).
+- Insister sur trois points centraux :
   1. une injection SQL peut annuler un contrôle d'accès applicatif entier dès que ce contrôle
-     est exprimé dans la même requête que l'entrée non validée (`/api/profile`) ;
+     est exprimé dans la même requête que l'entrée non validée (`/api/profile`, `/api/lab/project`) ;
   2. une injection peut faire apparaître des données d'une table que la requête d'origine ne
-     devait jamais toucher, via `UNION SELECT` (`/api/search`) — y compris quand cette table
-     contient des données volontairement cloisonnées (documents confidentiels).
-- Mentionner le scénario du lien piégé (un attaquant envoie `profile.html#id=... -- ` à une
-  victime connectée, pour voler des fiches hors du périmètre de la victime elle-même) comme
-  vecteur de diffusion possible — non implémenté ici (XSS / exfiltration, sujet distinct).
+     devait jamais toucher, via `UNION SELECT` (`/api/search`, `/api/lab/directory`) — y compris
+     quand cette table contient des données volontairement cloisonnées (documents
+     confidentiels), et qu'un seul paramètre concaténé suffit, sans formulaire riche ;
+  3. même sans aucune donnée affichée directement, une injection reste exploitable par un simple
+     signal vrai/faux (`/api/lab/login-history`) — et une surface réservée aux administrateurs
+     n'est pas à l'abri pour autant.
+- Mentionner le scénario du lien piégé (un attaquant envoie `profile.html#id=... -- ` ou
+  `project.html#id=... -- ` à une victime connectée, pour voler des fiches ou des projets hors
+  de son propre périmètre) comme vecteur de diffusion possible — non implémenté ici (XSS /
+  exfiltration, sujet distinct).
 - Références à citer : CWE-89 (injection SQL), CWE-285 / CWE-639 (contrôle d'accès incorrect /
   IDOR, pour le volet autorisation contournée), CWE-209 (fuite de message d'erreur SQL brut).
 
@@ -253,7 +337,8 @@ l'entrée utilisateur ne peut plus changer la structure de la requête. »
 
 Code volontairement vulnérable à des fins pédagogiques. Ne jamais déployer cette application en
 l'état sur un serveur accessible depuis l'extérieur, et ne jamais réutiliser les branches
-« vulnérable » de `/api/profile` et `/api/search` dans un projet réel. Hors de ces deux routes,
-l'application n'est pas pour autant prête pour la production : pas de HTTPS ni de
-Content-Security-Policy (les pages utilisent des scripts inline), limiteur d'essais en mémoire
-(un par processus), pas de sauvegarde ni de rotation des journaux.
+« vulnérable » de `/api/profile`, `/api/search`, `/api/lab/directory`, `/api/lab/project` et
+`/api/lab/login-history` dans un projet réel. Hors de ces cinq routes, l'application n'est pas
+pour autant prête pour la production : pas de HTTPS ni de Content-Security-Policy (les pages
+utilisent des scripts inline), limiteur d'essais en mémoire (un par processus), pas de sauvegarde
+ni de rotation des journaux.

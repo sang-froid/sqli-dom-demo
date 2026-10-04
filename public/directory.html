@@ -24,10 +24,24 @@
             <button class="toggle" id="mode-toggle" data-on="false"><span class="knob"></span></button>
             <span class="mode-tag vuln" id="mode-tag">Vulnérable</span>
           </div>
+          <button class="dev-toggle" id="dev-toggle">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            Panneau développeur
+          </button>
         </div>
       </div>
 
       <div class="content">
+        <div class="search-form" style="margin-bottom:18px">
+          <div class="field">
+            <label for="f-dept">Filtrer par service (labo — lecture directe via l'URL)</label>
+            <input id="f-dept" placeholder="ex. Ingénierie">
+          </div>
+          <button class="submit-sm" id="go-dept">Filtrer</button>
+          <span class="hint" style="align-self:center">Fonctionne aussi en tapant directement <code>?department=…</code> dans l'adresse.</span>
+        </div>
+        <div class="grid" id="lab-grid" style="margin-bottom:26px"></div>
+
         <div class="stat-row" id="stats"></div>
         <div class="grid" id="grid">
           <div class="empty-state">Chargement de l'annuaire…</div>
@@ -36,10 +50,68 @@
     </div>
   </div>
 
+  <div class="dev-panel" id="dev-panel">
+    <div class="bar"><span class="led"></span> Console réseau — environnement de démo</div>
+    <div class="inner">
+      <h4>Requête SQL exécutée côté serveur</h4>
+      <pre class="sql" id="dev-sql">—</pre>
+      <h4>Réponse brute de l'API</h4>
+      <pre id="dev-response">—</pre>
+    </div>
+  </div>
+
+  <style>
+    .search-form{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px}
+    .search-form .field{min-width:220px}
+    .submit-sm{background:var(--ink);color:#fff;border:none;border-radius:7px;padding:10px 18px;font-family:var(--font-display);font-weight:700;font-size:.86rem;cursor:pointer}
+    .submit-sm:hover{background:var(--ink-2)}
+  </style>
+
   <script src="app-shell.js"></script>
+  <script src="lab-guide.js"></script>
   <script>
     const { esc, initials } = AtriumShell;
     AtriumShell.initModeSwitch(document.getElementById('mode-toggle'), document.getElementById('mode-tag'));
+    AtriumShell.initDevPanel(document.getElementById('dev-toggle'), document.getElementById('dev-panel'));
+
+    // ---- Lab : filtre par service, lu directement dans l'URL (?department=…), un seul
+    // paramètre — pas de formulaire à plusieurs filtres requis pour l'injection UNION.
+    const ICON_EMPTY2 = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><line x1="7" y1="17" x2="17" y2="7"/></svg>';
+    function renderLabResults(rows) {
+      const grid = document.getElementById('lab-grid');
+      if (!rows || !rows.length) {
+        grid.innerHTML = `<div class="empty-state">${ICON_EMPTY2}<div>Aucun résultat pour ce filtre (labo).</div></div>`;
+        return;
+      }
+      grid.innerHTML = rows.map(r => `
+        <div class="emp-card" style="cursor:default">
+          <div class="avatar">${esc(initials(r.full_name || r.department || '?'))}</div>
+          <div>
+            <div class="name">${esc(r.full_name)}</div>
+            <div class="role">${esc(r.role)}</div>
+            <div class="dept">${esc(r.department)}</div>
+          </div>
+        </div>`).join('');
+    }
+    async function runDeptFilter() {
+      const department = document.getElementById('f-dept').value;
+      const url = new URL(location.href);
+      if (department) url.searchParams.set('department', department); else url.searchParams.delete('department');
+      history.replaceState(null, '', url);
+      if (!department) { document.getElementById('lab-grid').innerHTML = ''; return; }
+      const mode = AtriumShell.getMode();
+      const { data } = await AtriumShell.raw(`/api/lab/directory?department=${encodeURIComponent(department)}&mode=${mode}`);
+      document.getElementById('dev-sql').textContent = (data && data.sql_execute) || '—';
+      document.getElementById('dev-response').textContent = JSON.stringify(data, null, 2);
+      renderLabResults(data && data.resultats);
+    }
+    document.getElementById('go-dept').addEventListener('click', runDeptFilter);
+    document.getElementById('f-dept').addEventListener('keydown', (e) => { if (e.key === 'Enter') runDeptFilter(); });
+    document.addEventListener('atrium:mode-change', runDeptFilter);
+    {
+      const initialDept = new URLSearchParams(location.search).get('department');
+      if (initialDept) { document.getElementById('f-dept').value = initialDept; runDeptFilter(); }
+    }
 
     const ICON_EMPTY = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><line x1="7" y1="17" x2="17" y2="7"/></svg>';
 
@@ -81,7 +153,9 @@
       `).join('');
     }
 
-    AtriumShell.boot('directory').then(async () => {
+    AtriumShell.boot('directory').then(LabGuide.after('directory', {
+      onTry: (a) => { document.getElementById('f-dept').value = a.department; runDeptFilter(); },
+    })).then(async () => {
       const data = await AtriumShell.api('/api/employees');
       employees = data.employees;
       renderStats(data.user, employees);

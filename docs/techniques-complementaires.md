@@ -1,44 +1,53 @@
 # Techniques complémentaires d'exploitation
 
-Le labo démontre déjà, **concrètement et en direct**, deux techniques :
+Le labo démontre déjà, **concrètement et en direct**, trois techniques, sur cinq routes :
 
-- **in-band** sur `/api/profile` (le résultat détourné s'affiche directement dans la fiche —
-  contournement du filtre d'autorisation par commentaire SQL) ;
-- **UNION-based** sur `/api/search` (des lignes de la table `documents`, y compris des documents
-  confidentiels, apparaissent dans les résultats de recherche — voir le `README.md`, section
-  « Où se jouent les failles »).
+- **in-band**, par commentaire SQL qui efface un filtre d'autorisation, sur `/api/profile`
+  (hiérarchie `manager_id`) et `/api/lab/project` (appartenance au projet) — le résultat
+  détourné s'affiche directement ;
+- **UNION-based** sur `/api/search` (plusieurs filtres) et `/api/lab/directory` (un seul
+  paramètre) — des lignes de la table `documents`, y compris des documents confidentiels,
+  apparaissent dans les résultats ;
+- **aveugle (booléenne)** sur `/api/lab/login-history` (réservée aux administrateurs) — le
+  nombre de lignes renvoyées est le seul signal, aucune donnée d'une autre table n'est
+  affichée directement.
 
-Cette note documente, pour le rapport, les deux familles **restées théoriques** ici (blind
-booléen et temporel) — sans script d'attaque générique à livrer, avec des payloads conceptuels
-adaptés au schéma d'Atrium.
+Voir le `README.md`, section « Où se jouent les failles », pour le détail de chaque route.
+
+Cette note documente, pour le rapport, la famille **restée théorique** ici (temporel) et détaille
+la mécanique du blind booléen désormais câblé — sans script d'attaque générique à livrer, avec
+des payloads conceptuels adaptés au schéma d'Atrium.
 
 Référence terminologique : CWE-89 (*Improper Neutralization of Special Elements used in an SQL
 Command*) pour l'injection elle-même, CWE-209 (*Generation of Error Message Containing Sensitive
 Information*) pour la fuite d'un message d'erreur SQL brut — un défaut distinct, également
 illustré par la route vulnérable (`err.message` renvoyé tel quel au client).
 
-## 1. Blind booléen (boolean-based blind)
+## 1. Blind booléen (boolean-based blind) — implémenté sur `/api/lab/login-history`
 
 Utile quand l'application ne renvoie plus directement les données, mais que son comportement
-(nombre de résultats, page affichée) change selon qu'une condition est vraie ou fausse.
+(nombre de résultats, page affichée) change selon qu'une condition est vraie ou fausse. C'est la
+seule des cinq routes du labo qui n'affiche **jamais** de donnée volée directement.
 
-Principe sur `/api/profile?id=...&mode=vulnerable` :
+Principe sur `/api/lab/login-history?user=...&mode=vulnerable` (réservée aux administrateurs,
+onglet Connexions) :
 
 ```
-id = 1 AND 1=1   → 1 résultat (comportement normal)
-id = 1 AND 1=2   → 0 résultat (condition fausse)
+user = admin' AND 1=1 --    → des lignes reviennent (comportement normal)
+user = admin' AND 1=2 --    → aucune ligne (condition fausse)
 ```
 
 Une fois la différence confirmée, on pose des questions booléennes sur la donnée elle-même,
 caractère par caractère :
 
 ```
-id = 1 AND SUBSTR((SELECT password FROM users WHERE id=6),1,1) = 'a'
+user = admin' AND SUBSTR((SELECT password FROM users WHERE username='admin'),1,1)='a' -- 
 ```
 
-Si le nombre de résultats redevient 1, la réponse est « oui » ; sinon « non ». On recommence
-pour chaque position et chaque caractère candidat — lent, mais ça fonctionne même sans aucune
-donnée visible.
+Si des lignes reviennent, la réponse est « oui » ; sinon « non ». On recommence pour chaque
+position et chaque caractère candidat — lent, mais ça fonctionne même sans aucune donnée
+visible. Le labo s'arrête volontairement à la démonstration manuelle de l'oracle (vrai/faux) ;
+voir plus bas pourquoi le sondage complet n'est pas scripté.
 
 ## 2. Temporel (time-based blind)
 

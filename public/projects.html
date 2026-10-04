@@ -51,6 +51,7 @@
   </dialog>
 
   <script src="app-shell.js"></script>
+  <script src="lab-guide.js"></script>
   <script>
     const { esc, api } = AtriumShell;
     let projects = [];
@@ -70,7 +71,7 @@
         return;
       }
       grid.innerHTML = list.map(p => `
-        <a class="emp-card ${tagClass(p.department_name)}" href="project.html?id=${p.id}">
+        <a class="emp-card ${tagClass(p.department_name)}" href="project.html#id=${p.id}">
           <div style="min-width:0;flex:1">
             <div class="meta-row">
               <div class="name">${esc(p.name)}</div>
@@ -126,11 +127,11 @@
             status: form.status.value, department_id: Number(form.department_id.value),
           },
         });
-        location.href = `project.html?id=${project.id}`;
+        location.href = `project.html#id=${project.id}`;
       } catch (err) { AtriumShell.showError(errorBox, err); }
     });
 
-    AtriumShell.boot('projects').then(async (user) => { me = user; await load(); })
+    AtriumShell.boot('projects').then(LabGuide.after('projects')).then(async (user) => { me = user; await load(); })
       .catch(err => AtriumShell.showError(null, err));
   </script>
 </body>

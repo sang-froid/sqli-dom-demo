@@ -1,5 +1,5 @@
 // Point d'entree : attend que la base soit prete, puis ecoute sur PORT.
-// Voir app.js pour l'assemblage et routes/lab.js pour les deux surfaces vulnerables.
+// Voir app.js pour l'assemblage et routes/lab.js pour les cinq surfaces vulnerables.
 
 const config = require('./config');
 const db = require('./db');

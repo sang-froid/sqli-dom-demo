@@ -60,6 +60,7 @@
   </div>
 
   <script src="app-shell.js"></script>
+  <script src="lab-guide.js"></script>
   <script>
     const { esc, api, fmtDateTime } = AtriumShell;
     const $ = (id) => document.getElementById(id);
@@ -119,7 +120,7 @@
       } catch (err) { AtriumShell.showError($('password-error'), err); }
     });
 
-    AtriumShell.boot('account').then(async (user) => {
+    AtriumShell.boot('account').then(LabGuide.after('account')).then(async (user) => {
       renderIdentity(user);
       fillProfile(user);
       await loadLogins();

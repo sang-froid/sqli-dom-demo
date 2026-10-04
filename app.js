@@ -2,8 +2,9 @@
 // tests/ qui demarrent l'app sur un port aleatoire).
 //
 // Atrium : annuaire interne + projets/documents, avec un vrai modele d'autorisation.
-// Deux surfaces volontairement vulnerables a l'injection SQL (routes/lab.js :
-// /api/profile et /api/search, en mode "vulnerable") ; tout le reste de l'application est
+// Cinq surfaces volontairement vulnerables a l'injection SQL (routes/lab.js :
+// /api/profile, /api/search, /api/lab/directory, /api/lab/project et
+// /api/lab/login-history, en mode "vulnerable") ; tout le reste de l'application est
 // ecrit proprement (requetes parametrees, sessions, droits verifies cote serveur).
 // A lancer uniquement en local.
 

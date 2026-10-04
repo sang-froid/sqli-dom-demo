@@ -444,3 +444,62 @@ dialog.dlg h3{font-family:var(--font-display);margin:0 0 16px;font-size:1.15rem}
   .topbar, .content{padding-left:16px;padding-right:16px}
   .dev-panel{left:0}
 }
+
+/* ---- cadres pedagogiques (lab-guide.js) ---- */
+.lab-guide{
+  --lg:var(--bad);--lg-soft:var(--bad-soft);
+  margin:0 0 22px;border:1px solid var(--lg);border-left-width:6px;border-radius:6px 12px 12px 6px;
+  background:var(--lg-soft);color:var(--text);font-size:.88rem;line-height:1.55;
+}
+.lab-guide.secure{--lg:var(--good);--lg-soft:var(--good-soft)}
+.lab-guide.safe{--lg:var(--tag-c);--lg-soft:var(--tag-c-soft)}
+.lg-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px}
+.lg-head h2{font-family:var(--font-display);font-size:1rem;margin:0;flex:1 1 220px}
+.lg-badge{
+  background:var(--lg);color:#fff;font-family:var(--font-mono);font-size:.68rem;font-weight:700;
+  letter-spacing:.05em;text-transform:uppercase;padding:4px 9px;border-radius:4px;
+}
+.lg-toggle{
+  background:none;border:1px solid var(--lg);color:var(--lg);border-radius:6px;padding:4px 12px;
+  font-size:.78rem;font-weight:600;cursor:pointer;font-family:var(--font-body);
+}
+.lg-toggle:hover{background:var(--lg);color:#fff}
+.lg-body{padding:2px 16px 16px;border-top:1px dashed var(--lg)}
+.lab-guide.closed .lg-body{display:none}
+.lg-body h3{
+  font-family:var(--font-mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--lg);margin:16px 0 6px;
+}
+.lg-body p{margin:0 0 6px}
+.lg-body ul,.lg-body ol{margin:4px 0 6px;padding-left:20px}
+.lg-body li{margin-bottom:4px}
+.lg-body code{
+  font-family:var(--font-mono);font-size:.8rem;background:rgba(255,255,255,.7);
+  border:1px solid rgba(0,0,0,.08);border-radius:3px;padding:0 4px;word-break:break-word;
+}
+.lg-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:4px 28px}
+.lg-headline{font-weight:700}
+.lg-where{font-family:var(--font-mono);font-size:.72rem;color:var(--text-dim);margin-bottom:6px}
+.lg-code{
+  margin:0 0 6px;background:#1c1f1b;color:#e9e6dc;border-radius:8px;padding:10px 0;
+  font-family:var(--font-mono);font-size:.74rem;line-height:1.55;overflow-x:auto;
+}
+.lg-code .l{display:block;padding:0 12px;white-space:pre}
+.lg-code .l.bad{background:rgba(220,70,50,.28);color:#ffd8d0}
+.lg-code .l.good{background:rgba(60,160,100,.28);color:#d6f5e3}
+.lg-outcome{
+  background:#fff;border:1px solid var(--lg);border-radius:6px;padding:8px 12px;margin-top:10px !important;
+}
+.lg-attacks{display:flex;gap:8px;flex-wrap:wrap}
+.lg-try{
+  background:var(--lg);color:#fff;border:none;border-radius:7px;padding:8px 14px;cursor:pointer;
+  font-family:var(--font-display);font-weight:700;font-size:.8rem;
+}
+.lg-try:hover{filter:brightness(.9)}
+.lg-try:disabled{opacity:.6;cursor:wait}
+.lg-verdict{display:none;margin-top:10px;padding:10px 14px;border-radius:6px;font-weight:600;border:1px solid}
+.lg-verdict.show{display:block}
+.lg-verdict.bad{background:#fff;color:var(--bad);border-color:var(--bad)}
+.lg-verdict.good{background:#fff;color:var(--good);border-color:var(--good)}
+.lg-verdict.info{background:#fff;color:var(--text-dim);border-color:var(--line)}
+.lg-switch{margin-top:12px !important;color:var(--text-dim)}

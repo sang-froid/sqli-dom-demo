@@ -48,6 +48,7 @@
   </div>
 
   <script src="app-shell.js"></script>
+  <script src="lab-guide.js"></script>
   <script>
     const { esc, initials, fmtDate } = AtriumShell;
     AtriumShell.initModeSwitch(document.getElementById('mode-toggle'), document.getElementById('mode-tag'));
@@ -192,7 +193,14 @@
 
     document.addEventListener('atrium:mode-change', load);
     window.addEventListener('hashchange', load);
-    AtriumShell.boot('directory').then(load);
+    AtriumShell.boot('directory')
+      .then(LabGuide.after('profile', {
+        onTry: (a) => {
+          const target = '#id=' + encodeURIComponent(a.id);
+          if (location.hash === target) load(); else location.hash = target;
+        },
+      }))
+      .then(load);
   </script>
 </body>
 </html>

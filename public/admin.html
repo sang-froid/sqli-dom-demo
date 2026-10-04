@@ -12,7 +12,20 @@
     <aside class="sidebar" id="sidebar"></aside>
 
     <div class="main">
-      <div class="topbar"><h1>Administration</h1></div>
+      <div class="topbar">
+        <h1>Administration</h1>
+        <div class="right">
+          <div class="mode-switch">
+            <span class="label">Mode démo</span>
+            <button class="toggle" id="mode-toggle" data-on="false"><span class="knob"></span></button>
+            <span class="mode-tag vuln" id="mode-tag">Vulnérable</span>
+          </div>
+          <button class="dev-toggle" id="dev-toggle">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            Panneau développeur
+          </button>
+        </div>
+      </div>
 
       <div class="content">
         <div class="tabs" role="tablist">
@@ -89,9 +102,22 @@
     </form>
   </dialog>
 
+  <div class="dev-panel" id="dev-panel">
+    <div class="bar"><span class="led"></span> Console réseau — environnement de démo</div>
+    <div class="inner">
+      <h4>Requête SQL exécutée côté serveur</h4>
+      <pre class="sql" id="dev-sql">—</pre>
+      <h4>Réponse brute de l'API</h4>
+      <pre id="dev-response">—</pre>
+    </div>
+  </div>
+
   <script src="app-shell.js"></script>
+  <script src="lab-guide.js"></script>
   <script>
     const { esc, api, fmtDate, fmtDateTime, fmtMoney } = AtriumShell;
+    AtriumShell.initModeSwitch(document.getElementById('mode-toggle'), document.getElementById('mode-tag'));
+    AtriumShell.initDevPanel(document.getElementById('dev-toggle'), document.getElementById('dev-panel'));
     const $ = (id) => document.getElementById(id);
     let me, users = [], departments = [], currentTab = 'users';
     let editingUserId = null, editingDeptId = null, resettingUserId = null;
@@ -278,10 +304,38 @@
           <tbody>${rows.map(r => `
             <tr><td class="mono">${esc(fmtDateTime(r.ts))}</td><td>${esc(r.full_name)}</td><td class="mono">${esc(r.ip)}</td>
             <td><span class="pill ${r.success ? 'ok' : 'ko'}">${r.success ? 'réussie' : 'échec'}</span></td></tr>`).join('')}
-          </tbody></table></div>`;
+          </tbody></table></div>
+        <div class="page-head" style="margin-top:26px"><p><b>Labo — recherche par identifiant.</b> Filtre réservé aux administrateurs, lu directement dans l'URL (<code>#user=…</code>) : technique <b>aveugle</b> (booléenne), le nombre de lignes renvoyées est le seul signal.</p></div>
+        <div class="search-form">
+          <div class="field"><label for="lh-user">Identifiant</label><input id="lh-user" placeholder="ex. admin"></div>
+          <button class="btn primary" id="lh-go">Rechercher</button>
+        </div>
+        <div id="lh-result" style="margin-top:14px"></div>`;
+      $('lh-go').addEventListener('click', runLoginHistoryLab);
+      $('lh-user').addEventListener('keydown', (e) => { if (e.key === 'Enter') runLoginHistoryLab(); });
+      const fromHash = location.hash.replace(/^#user=/, '');
+      if (fromHash) { $('lh-user').value = decodeURIComponent(fromHash); runLoginHistoryLab(); }
     }
 
-    AtriumShell.boot('admin').then(async (user) => {
+    async function runLoginHistoryLab() {
+      const user = $('lh-user').value;
+      history.replaceState(null, '', user ? `#user=${encodeURIComponent(user)}` : location.pathname);
+      if (!user) { $('lh-result').innerHTML = ''; return; }
+      const mode = AtriumShell.getMode();
+      const { data } = await AtriumShell.raw(`/api/lab/login-history?user=${encodeURIComponent(user)}&mode=${mode}`);
+      $('dev-sql').textContent = (data && data.sql_execute) || '—';
+      $('dev-response').textContent = JSON.stringify(data, null, 2);
+      const rows = (data && data.resultats) || [];
+      $('lh-result').innerHTML = rows.length
+        ? `<div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Compte</th><th>IP</th><th>Résultat</th></tr></thead>
+           <tbody>${rows.map(r => `<tr><td class="mono">${esc(fmtDateTime(r.ts))}</td><td>${esc(r.full_name)}</td><td class="mono">${esc(r.ip)}</td>
+           <td><span class="pill ${r.success ? 'ok' : 'ko'}">${r.success ? 'réussie' : 'échec'}</span></td></tr>`).join('')}</tbody></table></div>`
+        : `<div class="empty-state">0 ligne renvoyée — c'est ce signal (0 ou plus) qu'une injection booléenne exploite.</div>`;
+    }
+
+    document.addEventListener('atrium:mode-change', () => { if (currentTab === 'logins' && $('lh-user')) runLoginHistoryLab(); });
+
+    AtriumShell.boot('admin').then(LabGuide.after('admin')).then(async (user) => {
       me = user;
       if (!user.is_admin) {
         $('panel').innerHTML = '<div class="empty-state warn"><b>Accès réservé aux administrateurs.</b></div>';

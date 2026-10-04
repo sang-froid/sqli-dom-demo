@@ -94,6 +94,7 @@
   </style>
 
   <script src="app-shell.js"></script>
+  <script src="lab-guide.js"></script>
   <script>
     const { esc } = AtriumShell;
     AtriumShell.initModeSwitch(document.getElementById('mode-toggle'), document.getElementById('mode-tag'));
@@ -101,7 +102,14 @@
 
     const ICON_EMPTY = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><line x1="7" y1="17" x2="17" y2="7"/></svg>';
 
-    AtriumShell.boot('search').then(() => AtriumShell.api('/api/departments')).then(depts => {
+    AtriumShell.boot('search').then(LabGuide.after('search', {
+      onTry: (a) => {
+        document.getElementById('f-q').value = a.q;
+        document.getElementById('f-dept').value = '';
+        document.getElementById('f-status').value = '';
+        runSearch();
+      },
+    })).then(() => AtriumShell.api('/api/departments')).then(depts => {
       document.getElementById('f-dept').innerHTML += depts.map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('');
     });
 
